@@ -1,0 +1,12 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uv run ruff check src tests scripts
+      # Integration tests need Postgres, a model server and the corpus — run locally.
+      - run: uv run pytest -m "not integration" -q

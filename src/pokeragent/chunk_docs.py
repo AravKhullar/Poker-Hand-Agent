@@ -1,48 +1,40 @@
 """Chunk and embed data/corpus/*.txt into Postgres + pgvector.
 
-Usage: uv run python -m pokeragent.chunk_docs_db
+Usage: uv run python -m pokeragent.chunk_docs
 """
-import os
 from pathlib import Path
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import OpenAIEmbeddings
 
-from dotenv import load_dotenv
-
-from pokeragent.db import execute, fetch_one, fetch_all
-
-load_dotenv()
+from pokeragent.db import execute, fetch_all, fetch_one
+from pokeragent.llm import embeddings
 
 CORPUS_DIR = "data/corpus"
-CHUNK_SIZE = 1000
-CHUNK_OVERLAP = 200
+CHUNK_SIZE = 750
+CHUNK_OVERLAP = 150
 
-embeddings = OpenAIEmbeddings(
-        model = os.getenv("EMBEDDING_MODEL"),
-        api_key = os.getenv("OPENROUTER_API_KEY"),
-        base_url = os.getenv("OPENROUTER_BASE_URL"),
-    )
 
 def main() -> None:
     already_ingested = {row[0] for row in fetch_all("SELECT source FROM documents")}
-    for path in sorted(Path(CORPUS_DIR).glob("*.txt")):
-        if str(path) in already_ingested:
+    for path in sorted(Path(CORPUS_DIR).rglob("*.txt")):
+        if path.as_posix() in already_ingested:
             print(f"skipping {path.name} (already ingested)")
             continue
         _ingest_file(path)
 
 
 def _ingest_file(path: Path) -> None:
-    doc_id = fetch_one(
-        "INSERT INTO documents (title, source) VALUES (%s, %s) RETURNING id",
-        (path.stem, str(path)),
-    )[0]
-
+    # Embed first: a failed embedding call must not leave a document row
+    # behind, or the next run would skip this file as "already ingested".
     chunks = _chunk_text(path.read_text(encoding="utf-8"))
     vectors = _embed_chunks(chunks)
 
-    for i, (chunk, vector) in enumerate(zip(chunks, vectors)):
+    doc_id = fetch_one(
+        "INSERT INTO documents (title, source) VALUES (%s, %s) RETURNING id",
+        (path.stem, path.as_posix()),
+    )[0]
+
+    for i, (chunk, vector) in enumerate(zip(chunks, vectors, strict=True)):
         execute(
             "INSERT INTO chunks (document_id, chunk_index, content, embedding) "
             "VALUES (%s, %s, %s, %s)",

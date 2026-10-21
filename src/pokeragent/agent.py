@@ -1,30 +1,20 @@
-"""LangGraph agent — the reasoning core.
-"""
+"""LangGraph agent — the reasoning core."""
 
-from dataclasses import asdict
 from typing import Annotated, TypedDict
+
+from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
-from langchain_openai import ChatOpenAI
-from langgraph.graph import StateGraph, START, END
-import os
-from dotenv import load_dotenv
+
+from pokeragent.llm import chat_model as model
 from pokeragent.retrieval import dense_search
 from pokeragent.tools import hand_equity
 
-load_dotenv()
-
-model = ChatOpenAI(
-    model = os.getenv("CHAT_MODEL"),
-    api_key = os.getenv("OPENROUTER_API_KEY"),
-    base_url = os.getenv("OPENROUTER_BASE_URL"),
-)
-
-MAX_STEPS = 6
+MAX_STEPS = 2
 
 class Action(BaseModel):
     player: str
     action: str
-    amount: str
+    amount: str = ""  # empty for checks/folds — models often omit it
 
 class StreetActions(BaseModel):
     board: str = Field(description="Cards revealed on this street, e.g. 'Kh 7d 2c'. Empty string for preflop.")
@@ -40,6 +30,11 @@ class ParsedHand(BaseModel):
 class Critique(BaseModel):
     grounded: bool = Field(description="True if every claim in the draft is supported by the retrieved context.")
     reason: str = Field(description="Brief explanation, especially if the draft is not grounded.")
+
+def full_board(hand: dict) -> str:
+    """All community cards dealt so far — each street only lists its own."""
+    return " ".join(s["board"] for s in hand["streets"] if s["board"].strip())
+
 
 class AgentState(TypedDict):
     hand_history: str          # raw input
@@ -65,32 +60,45 @@ shape exactly:
  
 "streets" is one entry per betting round reached (preflop, flop, turn,
 river), in order. "board" is the cards revealed on that street ("" for
-preflop). If the hand history ends mid-decision (Hero must act next),
-set "facing_action" to what Hero is responding to (e.g. "BB checks"),
-and don't include Hero's response in "actions" since it hasn't happened
-yet. If the hand is complete, set "facing_action" to "".
+preflop). Only record actions the hand history explicitly states — never
+invent one. "Folds to Hero" means every player before Hero folded; Hero
+has NOT acted, so it adds no Hero action.
+
+"facing_action": ONLY if the hand history ends with Hero still to act
+(it ends "Hero to act"), describe what Hero is responding to, copied from
+THIS hand — the last action by another player (e.g. a raise or a check),
+or "folds to Hero" if everyone before Hero folded preflop. Otherwise the
+hand is complete and "facing_action" MUST be "".
  
 Hand history:
 {state["hand_history"]}
  
 Respond with ONLY the JSON object, no other text."""
 
-    structured_model = model.with_structured_output(ParsedHand)
-    response = structured_model.invoke(prompt)
-
-    return {"parsed_actions": [response.model_dump()]}
+    structured_model = model.with_structured_output(ParsedHand, method="json_schema")
+    hand = structured_model.invoke(prompt).model_dump()
+    # Review mode means the hand is over; don't trust smaller models to infer
+    # that from the text — they often echo the last action as facing_action.
+    if state.get("mode") == "review":
+        hand["facing_action"] = ""
+    else:
+        # Simulate mode means Hero is to act, so a trailing Hero action is one
+        # the model invented (e.g. reading "Folds to Hero" as Hero folding).
+        actions = hand["streets"][-1]["actions"] if hand["streets"] else []
+        while actions and actions[-1]["player"].strip().lower() == "hero":
+            actions.pop()
+    return {"parsed_actions": [hand]}
 
 
 def retrieve(state: AgentState) -> dict:
     """Pull relevant strategy concepts for the decision under review."""
     hand = state["parsed_actions"][-1]
-    last_street = hand["streets"][-1]
     query = (
         f"{hand['hero_position']} {hand['stakes']} "
         f"facing {hand.get('facing_action') or 'a bet'} "
-        f"on board {last_street['board']} "
+        f"on board {full_board(hand) or 'preflop'} "
         f"with hole cards {hand['hero_cards']}"
-    )    
+    )
     results = dense_search(query)
     return {"retrieved": results}
 
@@ -99,12 +107,13 @@ def call_tools(state: AgentState) -> dict:
     """Run the equity calculator on the current spot.
     """
     hand = state["parsed_actions"][-1]
-    last_street = hand["streets"][-1]
 
+    # ponytail: villain range is fixed to any-two-cards; narrowing it from the
+    # action (e.g. a 3-bet range) would make the equity number much sharper.
     equity = hand_equity(
         hero_cards=hand["hero_cards"],
-        board=last_street["board"],
-        villain_range="any two cards", #Implement range
+        board=full_board(hand),
+        villain_range="any two cards",
     )
     return {"equity": equity.model_dump()}
 
@@ -118,49 +127,62 @@ def generate(state: AgentState) -> dict:
 
     if state["mode"] == "review":
         instruction = (
-            "Evaluate whether Hero's actual decisions in this hand were "
-            "correct. For each decision, say whether it was right or "
-            "wrong and why, citing the strategy concepts below."
+            "Give a concise decision-by-decision review. For each of Hero's "
+            "decisions, output exactly:\n"
+            "- **[street] [action]**: ✓ correct / ✗ mistake / ~ marginal — "
+            "one sentence why.\n"
+            "Keep the whole response under 120 words. End with a one-line "
+            "takeaway. Lead with the verdict, not the reasoning."
         )
     else:  # "simulate"
         instruction = (
-            "Hero is facing a decision right now. Recommend the best "
-            "action (fold, call, or raise with a sizing), citing the "
-            "strategy concepts and equity below."
+            "Recommend Hero's best action in under 60 words. Format:\n"
+            "- **Recommendation**: [fold/call/raise to X]\n"
+            "- **Why**: one or two sentences, citing the key concept and "
+            "equity.\n"
+            "Lead with the recommendation."
         )
 
     prompt = f"""{instruction}
-Hand:
+
+Hand history (as written):
+{state["hand_history"]}
+
+Parsed:
 Position: {hand["hero_position"]}
 Stakes: {hand["stakes"]}
 Hero cards: {hand["hero_cards"]}
 Streets: {hand["streets"]}
 Facing: {hand.get("facing_action") or "N/A"}
- 
-Hero's equity: {equity.get("hero_equity", 0):.1%} (share of pot on average)
- 
+
+Hero's equity vs. any two cards: {equity.get("hero_equity", 0):.1%}
+
 Relevant strategy concepts:
 {context}"""
 
     response = model.invoke(prompt)
-    return {"draft": response.content}
+    # Gemini returns .content as a list of content blocks; .text flattens them
+    # to a plain string (and is a no-op for Ollama's plain-string content).
+    return {"draft": response.text}
 
 def critique(state: AgentState) -> dict:
     """Check each claim in the draft against the retrieved context.
     """
     context = "\n\n".join(c.content for c in state["retrieved"])
-    prompt = f"""Does every claim in the draft below have support in the
-retrieved context? A claim about equity numbers is grounded if it matches
-the equity figures given; a strategy claim is grounded if it's backed by
-the retrieved concepts.
- 
+    prompt = f"""Review this poker analysis for claims that contradict or are
+unsupported by the retrieved strategy context. A claim is acceptable if it's
+consistent with the context and sound poker reasoning — it does NOT need to
+be verbatim from the context. Only flag claims that are clearly wrong or
+directly contradicted.
+Respond with ONLY a JSON object matching: {{"grounded": bool, "reason": str}}
+
 Draft:
 {state["draft"]}
- 
+
 Retrieved context:
 {context}"""
-    
-    structured_model = model.with_structured_output(Critique)
+
+    structured_model = model.with_structured_output(Critique, method="json_schema")
     response = structured_model.invoke(prompt)
     critique_note = "grounded" if response.grounded else f"ungrounded: {response.reason}"
     return {"critique": critique_note, "steps": 1}
@@ -188,5 +210,5 @@ def build_graph():
     graph.add_edge('call_tools', 'generate')
     graph.add_edge('generate', 'critique')
 
-    graph.add_conditional_edges('critique', route_after_critique, {"retry": "retrieve", "end": END})
+    graph.add_conditional_edges('critique', route_after_critique, {"retry": "generate", "end": END})
     return graph.compile()

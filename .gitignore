@@ -40,9 +40,8 @@ Thumbs.db
 # Data — keep the repo light; document how to obtain/build these instead.
 # Comment these out if you intend to commit a small sample corpus/eval set.
 data/corpus/*
-data/eval/*
 !data/corpus/.gitkeep
-!data/eval/.gitkeep
+# eval set is tiny and committed so README numbers are reproducible
 
 # Local Postgres volume if mounted into the repo
 pgdata/
@@ -53,3 +52,6 @@ pgdata/
 # Model / embedding caches
 *.pkl
 *.faiss
+# Tool state
+.deepeval/
+.serena/

@@ -7,23 +7,23 @@ requires-python = ">=3.12"
 dependencies = [
     "langgraph>=0.2",
     "langchain>=0.3",
-    "openai>=1.50",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "psycopg[binary,pool]>=3.2",
     "pgvector>=0.3",
     "pokerkit>=0.5",
-    "rank-bm25>=0.2",
     "pydantic>=2.9",
     "pydantic-settings>=2.5",
     "python-dotenv>=1.0",
     "langchain-text-splitters",
-    "langchain-openai",
-    "bs4",
+    "deepeval>=4.1.8",
+    "langchain-google-genai>=4.3.4",
+    "langchain-ollama>=1.1.0",
 ]
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.13.1",
     "pytest>=8.3",
     "ruff>=0.7",
 ]
@@ -31,6 +31,7 @@ scripts = [
     "requests>=2.32",
     "beautifulsoup4>=4.12",
     "lxml>=5.3",
+    "pypdf>=6.19.0",
 ]
 
 [build-system]
@@ -49,8 +50,15 @@ src = ["src", "tests"]
 # E/F = pyflakes+pycodestyle, I = isort, B = bugbear, UP = pyupgrade,
 # SIM = simplify. A sensible default set without being noisy.
 select = ["E", "F", "I", "B", "UP", "SIM"]
+# Long lines here are prompt text and Field descriptions; wrapping them hurts.
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# eval.py sets DeepEval env vars before importing it.
+"src/pokeragent/eval.py" = ["E402"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
 addopts = "--import-mode=importlib"
+markers = ["integration: needs Postgres, Ollama/Gemini and an ingested corpus"]

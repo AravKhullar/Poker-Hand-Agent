@@ -20,16 +20,18 @@ CREATE TABLE IF NOT EXISTS chunks (
     document_id  BIGINT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     chunk_index  INT NOT NULL,
     content      TEXT NOT NULL,
-    embedding    vector(1536) NOT NULL,
+    embedding    vector(768) NOT NULL,
     UNIQUE (document_id, chunk_index)
 );
 
--- For vector search (nearest-neighbour by cosine distance).
+-- 768 dims = nomic-embed-text (EMBEDDING_MODEL in .env). Changing the
+-- embedding model means changing this and re-ingesting: vectors from two
+-- models aren't comparable even at equal dimension.
 CREATE INDEX IF NOT EXISTS chunks_embedding_hnsw
     ON chunks
     USING hnsw (embedding vector_cosine_ops);
 
--- For keyword search (the BM25 half of hybrid retrieval, added later).
+-- For keyword search (the full-text half of hybrid_search).
 CREATE INDEX IF NOT EXISTS chunks_content_fts
     ON chunks
     USING gin (to_tsvector('english', content));

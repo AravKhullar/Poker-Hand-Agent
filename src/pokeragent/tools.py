@@ -1,10 +1,9 @@
 """Tools for AI Agent"""
 
-from concurrent.futures import ProcessPoolExecutor
 from pokerkit import Card, Deck, StandardHighHand, calculate_equities, parse_range
 from pydantic import BaseModel, Field
 
-SAMPLE_COUNT = 5000
+SAMPLE_COUNT = 1000
 
 _RANKS = "23456789TJQKA"
 
@@ -42,7 +41,6 @@ def hand_equity(hero_cards: str, board: str, villain_range: str) -> EquityResult
             Deck.STANDARD,
             (StandardHighHand,),
             sample_count=SAMPLE_COUNT,
-            executor=ProcessPoolExecutor(),
     )
 
     return EquityResult(

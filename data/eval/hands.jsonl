@@ -1,0 +1,10 @@
+{"hand_history": "6-max cash, 100bb effective. Hero on BTN with AhKs. Hero raises to 2.5bb, SB 3-bets to 9bb. Hero to act.", "mode": "simulate", "correct_action": "call"}
+{"hand_history": "6-max cash, 100bb effective. Hero in UTG with 2h7d. Hero to act.", "mode": "simulate", "correct_action": "fold"}
+{"hand_history": "6-max cash, 100bb effective. Hero on BTN with AhAs. Folds to Hero. Hero to act.", "mode": "simulate", "correct_action": "raise"}
+{"hand_history": "6-max cash, 100bb effective. Hero in BB with 9h8h. CO raises to 2.5bb, BTN folds, SB folds. Hero to act.", "mode": "simulate", "correct_action": "call"}
+{"hand_history": "6-max cash, 100bb effective. Hero in CO with KcKd. UTG raises to 2.5bb, HJ folds. Hero to act.", "mode": "simulate", "correct_action": "raise (3-bet)"}
+{"hand_history": "6-max cash, 100bb effective. Hero in BB with Qc3d. UTG raises to 3bb, everyone else folds. Hero to act.", "mode": "simulate", "correct_action": "fold"}
+{"hand_history": "6-max cash, 100bb effective. Hero in BB with 5h4h. BTN raises to 2.5bb, SB folds, Hero calls. Flop: Kc Qd Js. Hero checks, BTN bets 4bb. Hero to act.", "mode": "simulate", "correct_action": "fold"}
+{"hand_history": "6-max cash, 100bb effective. Hero on BTN with AhQh. Hero raises to 2.5bb, BB calls. Flop: Kh 8h 3c. BB checks, Hero checks. Turn: 2s. BB checks, Hero bets 3bb, BB calls. River: 5h. BB bets 6bb. Hero to act.", "mode": "simulate", "correct_action": "raise"}
+{"hand_history": "6-max cash, 100bb effective. Hero on BTN with AhKs. Hero raises to 2.5bb, SB calls. Flop: Kh 7d 2c. SB checks, Hero bets 3bb, SB calls. Turn: 9s. SB checks, Hero bets 8bb, SB folds.", "mode": "review", "correct_action": "all of Hero's decisions were correct (raise, bet, bet)"}
+{"hand_history": "6-max cash, 100bb effective. Hero on BTN with KsQs. CO raises to 2.5bb. Hero folds.", "mode": "review", "correct_action": "Hero's fold was a mistake; Hero should call or 3-bet"}

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poker Hand Review Agent</title>
+<style>
+  :root { --bg:#0f1512; --panel:#17201b; --line:#2a3a31; --text:#e8efe9; --muted:#93a59a; --accent:#3fb37f; --bad:#e0685c; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.55 system-ui, sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { color: var(--muted); margin: 0 0 24px; }
+  label { display:block; font-size:13px; color:var(--muted); margin-bottom:6px; }
+  textarea { width:100%; min-height:130px; padding:12px; background:var(--panel); color:var(--text);
+             border:1px solid var(--line); border-radius:8px; font:14px/1.5 ui-monospace, monospace; resize:vertical; }
+  .row { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0 20px; }
+  select, button { padding:9px 14px; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--text); font:inherit; cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#06130c; font-weight:600; }
+  button:disabled { opacity:.6; cursor:wait; }
+  .spacer { flex:1; }
+  #out { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 18px; min-height:60px; }
+  #out ul { margin:0; padding-left:20px; }
+  #meta { margin-top:10px; font-size:13px; color:var(--muted); }
+  .ok { color:var(--accent); } .no { color:var(--bad); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Poker Hand Review Agent</h1>
+  <p class="sub">Paste a No-Limit Hold'em hand. <b>Review</b> grades Hero's decisions; <b>Simulate</b> recommends Hero's next action.</p>
+
+  <label for="hand">Hand history</label>
+  <textarea id="hand">6-max cash, 100bb effective. Hero on BTN with AhKs. Hero raises to 2.5bb, SB calls. Flop: Kh 7d 2c. SB checks, Hero bets 3bb, SB calls. Turn: 9s. SB checks, Hero bets 8bb, SB folds.</textarea>
+
+  <div class="row">
+    <select id="mode" aria-label="Mode">
+      <option value="review">Review</option>
+      <option value="simulate">Simulate</option>
+    </select>
+    <button id="go" class="primary">Analyze</button>
+    <span class="spacer"></span>
+    <button data-mode="review" data-hand="6-max cash, 100bb effective. Hero on BTN with KsQs. CO raises to 2.5bb. Hero folds.">Example: review</button>
+    <button data-mode="simulate" data-hand="6-max cash, 100bb effective. Hero on BTN with AhQh. Hero raises to 2.5bb, BB calls. Flop: Kh 8h 3c. BB checks, Hero checks. Turn: 2s. BB checks, Hero bets 3bb, BB calls. River: 5h. BB bets 6bb. Hero to act.">Example: simulate</button>
+  </div>
+
+  <div id="out">Result appears here.</div>
+  <div id="meta"></div>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => s.replace(/[&<>]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;"})[c]);
+
+  // Just enough markdown for the agent's output: **bold** and "- " bullets.
+  function render(md) {
+    const html = esc(md).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").split("\n");
+    let out = "", inList = false;
+    for (const line of html) {
+      const item = line.match(/^\s*[-*] (.*)/);
+      if (item && !inList) { out += "<ul>"; inList = true; }
+      if (!item && inList) { out += "</ul>"; inList = false; }
+      out += item ? `<li>${item[1]}</li>` : (line.trim() ? `<p>${line}</p>` : "");
+    }
+    return out + (inList ? "</ul>" : "");
+  }
+
+  document.querySelectorAll("button[data-hand]").forEach((b) => b.onclick = () => {
+    $("hand").value = b.dataset.hand; $("mode").value = b.dataset.mode;
+  });
+
+  $("go").onclick = async () => {
+    $("go").disabled = true; $("meta").textContent = "";
+    $("out").textContent = "Parsing hand, retrieving strategy, computing equity, drafting, self-critiquing…";
+    try {
+      const res = await fetch("/review", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({hand_history: $("hand").value, mode: $("mode").value}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || res.statusText);
+      $("out").innerHTML = render(data.review);
+      $("meta").innerHTML = (data.grounded ? '<span class="ok">✓ grounded</span>' : '<span class="no">✗ critique flagged claims</span>')
+        + ` · critique passes: ${data.retries}`;
+    } catch (e) {
+      $("out").textContent = "Error: " + e.message;
+    } finally {
+      $("go").disabled = false;
+    }
+  };
+</script>
+</body>
+</html>

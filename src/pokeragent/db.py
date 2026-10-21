@@ -1,22 +1,31 @@
 """Postgres connection and query helpers."""
- 
-import psycopg
-from pgvector.psycopg import register_vector
-from dotenv import load_dotenv
+
 import os
- 
+from functools import cache
+
+import psycopg
+from dotenv import load_dotenv
+from pgvector.psycopg import register_vector
+
 load_dotenv()
-conn = psycopg.connect(os.getenv("DATABASE_URL"), autocommit=True)
-register_vector(conn)
- 
- 
+
+
+@cache
+def _conn() -> psycopg.Connection:
+    # Opened on first query, not at import, so modules that import this
+    # (and their unit tests) don't need a running database.
+    conn = psycopg.connect(os.getenv("DATABASE_URL"), autocommit=True)
+    register_vector(conn)
+    return conn
+
+
 def fetch_one(sql: str, params: tuple = ()) -> tuple | None:
-    return conn.execute(sql, params).fetchone()
- 
- 
+    return _conn().execute(sql, params).fetchone()
+
+
 def execute(sql: str, params: tuple = ()) -> None:
-    conn.execute(sql, params)
- 
- 
+    _conn().execute(sql, params)
+
+
 def fetch_all(sql: str, params: tuple = ()) -> list[tuple]:
-    return conn.execute(sql, params).fetchall()
+    return _conn().execute(sql, params).fetchall()

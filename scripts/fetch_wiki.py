@@ -8,7 +8,7 @@ it's an error page). Wikipedia's API etiquette requires a descriptive
 User-Agent identifying the client; this script sends one.
 
 Usage:
-    uv run --group scripts python scripts/fetch_wikipedia.py
+    uv run --group scripts python scripts/fetch_wiki.py
 """
 
 import os
